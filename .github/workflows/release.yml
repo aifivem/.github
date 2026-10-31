@@ -40,6 +40,9 @@ jobs:
 
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
     steps:
       - id: release
         uses: googleapis/release-please-action@v4
@@ -66,3 +69,51 @@ jobs:
               '{username: "AI Core", embeds: [{title: $title, url: $url, description: $body, color: 4060062}]}' \
               | curl -fsS -H "Content-Type: application/json" -d @- "$WEBHOOK"
           done
+
+  # A resource release gets a ready-to-install zip built from source on a clean machine, so a release never depends
+  # on someone having committed a fresh dist/. The @aicore-fivem packages come from aicore-packages main, linked
+  # through a bun workspace the same way the server folder links them.
+  package:
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
+          path: ws/res
+      - id: kind
+        run: |
+          if [ -f ws/res/fxmanifest.lua ]; then echo "resource=true" >> "$GITHUB_OUTPUT"; else echo "resource=false" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.kind.outputs.resource == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: aifivem/aicore-packages
+          path: ws/packages
+      - if: steps.kind.outputs.resource == 'true'
+        uses: oven-sh/setup-bun@v2
+      - name: Build
+        if: steps.kind.outputs.resource == 'true'
+        working-directory: ws
+        run: |
+          members='"packages/*", "res"'
+          [ -f res/web/package.json ] && members="$members, \"res/web\""
+          echo "{ \"name\": \"release-build\", \"private\": true, \"workspaces\": [ $members ] }" > package.json
+          bun install
+          cd res && bun run build
+      - name: Upload the server zip
+        if: steps.kind.outputs.resource == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+        working-directory: ws
+        run: |
+          name="${GITHUB_REPOSITORY#*/}"
+          mkdir -p "out/$name"
+          # Source, tooling and repo files stay out; anchored patterns only match at the top (dist/web is the built page).
+          skip=(/.git /.github /node_modules /resource /web /scripts /bench /tsdown.config.ts /package.json /bun.lock /.prettierrc /.gitignore /release-please-config.json /.release-please-manifest.json "/tsconfig*.json" CLAUDE.md "*.bak" secrets.json)
+          args=()
+          for p in "${skip[@]}"; do args+=(--exclude "$p"); done
+          rsync -a "${args[@]}" res/ "out/$name/"
+          (cd out && zip -qr "../$name-$TAG.zip" "$name")
+          gh release upload "$TAG" "$name-$TAG.zip" --repo "$GITHUB_REPOSITORY" --clobber

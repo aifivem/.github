@@ -1,0 +1,130 @@
+# Mirrors issues and pull requests of every aifivem repository into the Discord forum channels (called by each repo's
+# .github/workflows/community.yml with `secrets: inherit`). A new issue opens a forum post: `bug` issues in the bug
+# report forum, everything else in the suggestion forum. Its comments, closing and reopening, and pull requests that
+# close it are posted into the same post; the post id is kept in a marker comment on the issue. A pull request that
+# closes no issue opens its own post in the suggestion forum. Mentions in the text never ping anyone.
+name: community
+
+on:
+  workflow_call:
+    secrets:
+      DISCORD_BUG_FORUM_WEBHOOK:
+        required: false
+      DISCORD_SUGGESTION_FORUM_WEBHOOK:
+        required: false
+
+permissions:
+  issues: write
+  pull-requests: read
+
+jobs:
+  discord:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mirror to Discord
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUG_HOOK: ${{ secrets.DISCORD_BUG_FORUM_WEBHOOK }}
+          IDEA_HOOK: ${{ secrets.DISCORD_SUGGESTION_FORUM_WEBHOOK }}
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          PAYLOAD: ${{ toJSON(github.event) }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          short="${REPO#*/}"
+          marker="discord-post"
+
+          # post <webhook> <json> [thread id]: prints the created message (with ?wait=true)
+          post() {
+            local hook="$1" body="$2" thread="${3:-}"
+            [ -z "$hook" ] && return 0
+            local url="$hook?wait=true"
+            [ -n "$thread" ] && url="$url&thread_id=$thread"
+            curl -fsS -H "Content-Type: application/json" -d "$body" "$url"
+          }
+          # message <text>: a plain message that pings nobody
+          message() { jq -n --arg c "${1:0:1900}" '{username: "AI Core", content: $c, allowed_mentions: {parse: []}}'; }
+          # opening <title> <text>: a new forum post
+          opening() {
+            jq -n --arg t "${1:0:95}" --arg c "${2:0:1900}" \
+              '{username: "AI Core", thread_name: $t, content: $c, allowed_mentions: {parse: []}}'
+          }
+          # find_post <number>: "<forum> <thread>" from the marker comment, empty when there is none
+          find_post() {
+            gh api "repos/$REPO/issues/$1/comments" --paginate --jq \
+              ".[] | select(.body | contains(\"<!-- $marker:\")) | .body" \
+              | grep -o "<!-- $marker:[a-z]*:[0-9]*" | head -1 | sed "s/<!-- $marker://; s/:/ /" || true
+          }
+          hook_of() { if [ "$1" = "bug" ]; then echo "$BUG_HOOK"; else echo "$IDEA_HOOK"; fi; }
+          # open_post <number> <forum> <title> <text>: opens the post and leaves the marker comment
+          open_post() {
+            local hook; hook=$(hook_of "$2")
+            [ -z "$hook" ] && return 0
+            local thread
+            thread=$(post "$hook" "$(opening "$3" "$4")" | jq -r '.channel_id')
+            [ -z "$thread" ] || [ "$thread" = "null" ] && return 0
+            gh api "repos/$REPO/issues/$1/comments" -f body="This is mirrored to our Discord $2 forum, where the community can follow it. <!-- $marker:$2:$thread -->" > /dev/null
+          }
+          # to_post <number> <text>: a message into the issue's post, if it has one
+          to_post() {
+            local found; found=$(find_post "$1")
+            [ -z "$found" ] && return 0
+            set -- "$1" "$2" $found
+            post "$(hook_of "$3")" "$(message "$2")" "$4" > /dev/null
+          }
+
+          case "$EVENT:$ACTION" in
+            issues:opened)
+              n=$(jq -r '.issue.number' <<< "$PAYLOAD")
+              title=$(jq -r '.issue.title' <<< "$PAYLOAD")
+              url=$(jq -r '.issue.html_url' <<< "$PAYLOAD")
+              user=$(jq -r '.issue.user.login' <<< "$PAYLOAD")
+              body=$(jq -r '.issue.body // ""' <<< "$PAYLOAD")
+              forum=suggestion
+              jq -e '.issue.labels | map(.name) | index("bug")' <<< "$PAYLOAD" > /dev/null && forum=bug
+              open_post "$n" "$forum" "[$short] $title" "**$short #$n** by $user
+          $url
+
+          ${body:0:1500}"
+              ;;
+            issues:closed|issues:reopened)
+              n=$(jq -r '.issue.number' <<< "$PAYLOAD")
+              reason=$(jq -r '.issue.state_reason // ""' <<< "$PAYLOAD")
+              to_post "$n" "Issue $ACTION${reason:+ ($reason)}: $(jq -r '.issue.html_url' <<< "$PAYLOAD")"
+              ;;
+            issue_comment:created)
+              author=$(jq -r '.comment.user.login' <<< "$PAYLOAD")
+              [ "$author" = "github-actions[bot]" ] && exit 0
+              n=$(jq -r '.issue.number' <<< "$PAYLOAD")
+              body=$(jq -r '.comment.body' <<< "$PAYLOAD")
+              to_post "$n" "**$author** commented: $(jq -r '.comment.html_url' <<< "$PAYLOAD")
+
+          ${body:0:1500}"
+              ;;
+            pull_request_target:opened|pull_request_target:closed)
+              n=$(jq -r '.pull_request.number' <<< "$PAYLOAD")
+              title=$(jq -r '.pull_request.title' <<< "$PAYLOAD")
+              url=$(jq -r '.pull_request.html_url' <<< "$PAYLOAD")
+              user=$(jq -r '.pull_request.user.login' <<< "$PAYLOAD")
+              body=$(jq -r '.pull_request.body // ""' <<< "$PAYLOAD")
+              merged=$(jq -r '.pull_request.merged' <<< "$PAYLOAD")
+              what="opened"
+              [ "$ACTION" = "closed" ] && { [ "$merged" = "true" ] && what="merged" || what="closed"; }
+              linked=$(grep -oiE '(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]+' <<< "$body" | grep -oE '[0-9]+' | sort -u || true)
+              for issue in $linked; do
+                to_post "$issue" "Pull request $what: **$title** by $user
+          $url"
+              done
+              if [ -z "$linked" ]; then
+                if [ "$ACTION" = "opened" ]; then
+                  open_post "$n" "suggestion" "[$short] PR: $title" "**$short PR #$n** by $user
+          $url
+
+          ${body:0:1500}"
+                else
+                  to_post "$n" "Pull request $what: $url"
+                fi
+              fi
+              ;;
+          esac

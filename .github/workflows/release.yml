@@ -1,21 +1,68 @@
-# Shared release workflow of every aifivem repository (called by each repo's .github/workflows/release.yml).
-# release-please reads the Conventional Commits pushed to main and keeps a release pull request open: it bumps
-# package.json, CHANGELOG.md and the marked `version` line of fxmanifest.lua. Merging that pull request tags the
-# version and publishes the GitHub release with the notes grouped as New Features, Bug Fixes, Performance...
+# Shared release workflow of every aifivem repository (called by each repo's .github/workflows/release.yml with
+# `secrets: inherit`). release-please reads the Conventional Commits pushed to main and keeps a release pull request
+# open: it bumps package.json, CHANGELOG.md and the marked `version` line of fxmanifest.lua. Merging that pull request
+# tags the version and publishes the GitHub release, its notes grouped as New Features, Bug Fixes, Performance...
+# Every push is posted to the Discord changelog channel, every new release to the release channel (organization
+# secrets DISCORD_CHANGELOG_WEBHOOK and DISCORD_RELEASE_WEBHOOK; a missing secret skips its post).
 name: release
 
 on:
   workflow_call:
+    secrets:
+      DISCORD_CHANGELOG_WEBHOOK:
+        required: false
+      DISCORD_RELEASE_WEBHOOK:
+        required: false
 
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
+  changelog:
+    if: github.event_name == 'push' && github.event.commits[0] != null
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post the pushed commits to Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}
+          COMMITS: ${{ toJSON(github.event.commits) }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          COMPARE: ${{ github.event.compare }}
+        run: |
+          [ -z "$WEBHOOK" ] && exit 0
+          lines=$(echo "$COMMITS" | jq -r '.[] | "[`\(.id[0:7])`](\(.url)) \(.message | split("\n")[0]) - \(.author.username // .author.name)"')
+          count=$(echo "$COMMITS" | jq 'length')
+          jq -n --arg title "${REPO#*/}: $count new commit(s) on $BRANCH" --arg url "$COMPARE" --arg body "${lines:0:4000}" \
+            '{username: "AI Core", embeds: [{title: $title, url: $url, description: $body, color: 4060062}]}' \
+            | curl -fsS -H "Content-Type: application/json" -d @- "$WEBHOOK"
+
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v4
+      - id: release
+        uses: googleapis/release-please-action@v4
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      - name: Post new releases to Discord
+        if: steps.release.outputs.releases_created == 'true'
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PATHS: ${{ steps.release.outputs.paths_released }}
+          OUTPUTS: ${{ toJSON(steps.release.outputs) }}
+        run: |
+          [ -z "$WEBHOOK" ] && exit 0
+          for path in $(echo "$PATHS" | jq -r '.[]'); do
+            if [ "$path" = "." ]; then prefix=""; else prefix="$path--"; fi
+            tag=$(echo "$OUTPUTS" | jq -r --arg k "${prefix}tag_name" '.[$k]')
+            [ -z "$tag" ] || [ "$tag" = "null" ] && continue
+            body=$(gh release view "$tag" --repo "$REPO" --json body --jq .body)
+            url=$(gh release view "$tag" --repo "$REPO" --json url --jq .url)
+            jq -n --arg title "${REPO#*/} $tag" --arg url "$url" --arg body "${body:0:4000}" \
+              '{username: "AI Core", embeds: [{title: $title, url: $url, description: $body, color: 4060062}]}' \
+              | curl -fsS -H "Content-Type: application/json" -d @- "$WEBHOOK"
+          done

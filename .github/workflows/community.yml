@@ -50,10 +50,11 @@ jobs:
             jq -n --arg t "${1:0:95}" --arg c "${2:0:1900}" \
               '{username: "AI Core", thread_name: $t, content: $c, allowed_mentions: {parse: []}}'
           }
-          # find_post <number>: "<forum> <thread>" from the marker comment, empty when there is none
+          # find_post <number>: "<forum> <thread>" from this workflow's own marker comment (a marker written by anyone
+          # else could point the messages at another Discord post), empty when there is none
           find_post() {
             gh api "repos/$REPO/issues/$1/comments" --paginate --jq \
-              ".[] | select(.body | contains(\"<!-- $marker:\")) | .body" \
+              ".[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"<!-- $marker:\"))) | .body" \
               | grep -o "<!-- $marker:[a-z]*:[0-9]*" | head -1 | sed "s/<!-- $marker://; s/:/ /" || true
           }
           hook_of() { if [ "$1" = "bug" ]; then echo "$BUG_HOOK"; else echo "$IDEA_HOOK"; fi; }

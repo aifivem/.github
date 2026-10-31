@@ -1,0 +1,80 @@
+name: Bug report
+description: Something in an AI Core script does not work as it should.
+title: "[bug] <script>: <what goes wrong>"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Short and exact is best: one bug per issue.
+        Writing this with an AI? Paste the console lines as they are and keep the fields below; do not guess versions.
+  - type: input
+    id: script
+    attributes:
+      label: Script
+      description: The resource name of the script that misbehaves (ai-inventory, ai-core, ai-death...).
+      placeholder: ai-inventory
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The `version` line of that script's `fxmanifest.lua`, or the release you installed.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: server
+    attributes:
+      label: FXServer build and OS
+      description: The artifact build number (txAdmin shows it) and Windows or Linux.
+      placeholder: 38055, Windows
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What to do in game, one step per line, starting from a fresh join.
+      placeholder: |
+        1. Join and pick a character
+        2. Open the inventory (F2)
+        3. Drag the phone onto the ground
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happens instead
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console output
+      description: Lines from the server console and the client (F8) around the moment it happens. `SCRIPT ERROR`, `[client error]` and stack traces matter most.
+      render: text
+  - type: textarea
+    id: others
+    attributes:
+      label: Other scripts involved
+      description: Third-party scripts that take part (an inventory, a phone, a target script, an ESX / QB / Qbox script using the bridge) with their versions.
+  - type: textarea
+    id: changes
+    attributes:
+      label: Your changes
+      description: Did you or an AI change this script's files or its panel settings in an unusual way? Which files?
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I am on the latest release of this script (ai-core lists outdated scripts on the admin dashboard).
+        - label: I searched the open and closed issues for the same bug.

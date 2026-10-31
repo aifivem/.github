@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and help
+    url: https://discord.gg/CNuXCnS6nY
+    about: Setup questions, how-tos and chat with other server owners on Discord.
+  - name: Documentation
+    url: https://aifivem.com/docs
+    about: Installation, every script, the admin panel, compatibility and the developer reference.

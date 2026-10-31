@@ -1,0 +1,44 @@
+name: Feature request
+description: An idea for an AI Core script, the admin panel or compatibility with another script.
+title: "[feature] <script>: <the idea in a few words>"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the need first, then your idea. Players' and server owners' point of view helps most.
+  - type: input
+    id: script
+    attributes:
+      label: Script
+      description: Which script it belongs to, or "new script" / "compatibility".
+      placeholder: ai-garages
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: The need
+      description: What a player or server owner cannot do today, or what is hard.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: How it should work in game and what the server owner sets in the admin panel.
+    validations:
+      required: true
+  - type: textarea
+    id: reference
+    attributes:
+      label: References
+      description: Another script that does this well (name and link), screenshots, videos. For compatibility requests, the script's name, link and the exports or events it uses.
+  - type: dropdown
+    id: help
+    attributes:
+      label: Can you help?
+      options:
+        - I can open a pull request
+        - I can test it on my server
+        - Just the idea

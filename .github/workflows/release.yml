@@ -90,7 +90,7 @@ jobs:
           path: ws/res
       - id: kind
         run: |
-          if [ -f ws/res/fxmanifest.lua ]; then echo "resource=true" >> "$GITHUB_OUTPUT"; else echo "resource=false" >> "$GITHUB_OUTPUT"; fi
+          if [ -f ws/res/tsdown.config.ts ]; then echo "resource=true" >> "$GITHUB_OUTPUT"; else echo "resource=false" >> "$GITHUB_OUTPUT"; fi
       - if: steps.kind.outputs.resource == 'true'
         uses: actions/checkout@v4
         with:
@@ -107,6 +107,9 @@ jobs:
           echo "{ \"name\": \"release-build\", \"private\": true, \"workspaces\": [ $members ] }" > package.json
           bun install
           cd res && bun run build
+      # One download for a server owner: the built files run as they are, and the source next to them builds on its
+      # own (`bun install && bun run build` in the folder, the @aifivem packages from npm). Uploaded as
+      # <name>-<tag>.zip and as <name>.zip, which releases/latest/download/<name>.zip (the txAdmin recipe) points at.
       - name: Upload the server zip
         if: steps.kind.outputs.resource == 'true'
         env:
@@ -116,10 +119,34 @@ jobs:
         run: |
           name="${GITHUB_REPOSITORY#*/}"
           mkdir -p "out/$name"
-          # Source, tooling and repo files stay out; anchored patterns only match at the top (dist/web is the built page).
-          skip=(/.git /.github /node_modules /resource /web /scripts /bench /tsdown.config.ts /package.json /bun.lock /.prettierrc /.gitignore /release-please-config.json /.release-please-manifest.json "/tsconfig*.json" CLAUDE.md "*.bak" secrets.json)
+          # Unanchored patterns match at any depth (web/node_modules too).
+          skip=(/.git /.github node_modules /release-please-config.json /.release-please-manifest.json "*.tsbuildinfo" "*.bak" "*.tmp" secrets.json)
           args=()
           for p in "${skip[@]}"; do args+=(--exclude "$p"); done
           rsync -a "${args[@]}" res/ "out/$name/"
+          # workspace:* resolves only inside a workspace: pin our packages to the versions this zip was built with, and
+          # make web/ the resource's own workspace so one bun install sets up the page's packages too.
+          node - "out/$name" packages <<'EOF'
+          const fs = require("fs");
+          const path = require("path");
+          const [dir, pkgs] = process.argv.slice(2);
+          const version = (name) =>
+            JSON.parse(fs.readFileSync(path.join(pkgs, name.split("/")[1], "package.json"), "utf8")).version;
+          const hasWeb = fs.existsSync(path.join(dir, "web/package.json"));
+          for (const rel of ["package.json", "web/package.json"]) {
+            const file = path.join(dir, rel);
+            if (!fs.existsSync(file)) continue;
+            const json = JSON.parse(fs.readFileSync(file, "utf8"));
+            for (const key of ["dependencies", "devDependencies"])
+              for (const [name, spec] of Object.entries(json[key] ?? {})) {
+                if (!spec.startsWith("workspace:")) continue;
+                if (!name.startsWith("@aifivem/")) throw new Error(`${rel}: ${name} is ${spec}`);
+                json[key][name] = `^${version(name)}`;
+              }
+            if (rel === "package.json" && hasWeb) json.workspaces = ["web"];
+            fs.writeFileSync(file, JSON.stringify(json, null, 2) + "\n");
+          }
+          EOF
           (cd out && zip -qr "../$name-$TAG.zip" "$name")
-          gh release upload "$TAG" "$name-$TAG.zip" --repo "$GITHUB_REPOSITORY" --clobber
+          cp "$name-$TAG.zip" "$name.zip"
+          gh release upload "$TAG" "$name-$TAG.zip" "$name.zip" --repo "$GITHUB_REPOSITORY" --clobber

@@ -13,6 +13,11 @@ on:
         required: false
       DISCORD_RELEASE_WEBHOOK:
         required: false
+    outputs:
+      # JSON list of the released paths. aicore-packages publishes them to npm in its own workflow: only that repo
+      # grants id-token: write, and npm trusted publishing checks the calling workflow's file name.
+      paths_released:
+        value: ${{ jobs.release-please.outputs.paths }}
 
 permissions:
   contents: write
@@ -43,6 +48,7 @@ jobs:
     outputs:
       released: ${{ steps.release.outputs.release_created }}
       tag: ${{ steps.release.outputs.tag_name }}
+      paths: ${{ steps.release.outputs.paths_released }}
     steps:
       - id: release
         uses: googleapis/release-please-action@v4

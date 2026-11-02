@@ -121,7 +121,7 @@ jobs:
           name="${GITHUB_REPOSITORY#*/}"
           mkdir -p "out/$name"
           # Unanchored patterns match at any depth (web/node_modules too).
-          skip=(/.git /.github node_modules /release-please-config.json /.release-please-manifest.json "*.tsbuildinfo" "*.bak" "*.tmp" secrets.json)
+          skip=(/.git /.github node_modules /release-please-config.json /.release-please-manifest.json "*.tsbuildinfo" "*.bak" "*.tmp" .yarn.installed secrets.json)
           args=()
           for p in "${skip[@]}"; do args+=(--exclude "$p"); done
           rsync -a "${args[@]}" res/ "out/$name/"
@@ -151,7 +151,7 @@ jobs:
           (cd out && zip -qr "../$name-$TAG.zip" "$name")
           cp "$name-$TAG.zip" "$name.zip"
           # Anchored patterns only match at the top (dist/web is the built page, web/ its source).
-          runtime=(/.git /.github node_modules /resource /web /scripts /bench /tsdown.config.ts /package.json /bun.lock /.prettierrc /.prettierignore /.gitignore /release-please-config.json /.release-please-manifest.json "/tsconfig*.json" CLAUDE.md "*.tsbuildinfo" "*.bak" "*.tmp" secrets.json)
+          runtime=(/.git /.github node_modules /resource /web /scripts /bench /tsdown.config.ts /package.json /bun.lock /.prettierrc /.prettierignore /.gitignore /release-please-config.json /.release-please-manifest.json "/tsconfig*.json" CLAUDE.md "*.tsbuildinfo" "*.bak" "*.tmp" .yarn.installed secrets.json)
           args=()
           for p in "${runtime[@]}"; do args+=(--exclude "$p"); done
           mkdir -p "runtime/$name"

@@ -1,7 +1,7 @@
 # Shared release workflow of every aifivem repository (called by each repo's .github/workflows/release.yml with
 # `secrets: inherit`). release-please reads the Conventional Commits pushed to main and keeps a release pull request
-# open: it bumps package.json, CHANGELOG.md and the marked `version` line of fxmanifest.lua. Merging that pull request
-# tags the version and publishes the GitHub release, its notes grouped as New Features, Bug Fixes, Performance...
+# open: it bumps package.json and CHANGELOG.md. Merging that pull request tags the version and publishes the GitHub
+# release, its notes grouped as New Features, Bug Fixes, Performance..., and a resource's release gets its zip below.
 # Every push is posted to the Discord changelog channel, every new release to the release channel (organization
 # secrets DISCORD_CHANGELOG_WEBHOOK and DISCORD_RELEASE_WEBHOOK; a missing secret skips its post).
 name: release
@@ -110,7 +110,8 @@ jobs:
       # One download for a server owner: the built files run as they are, and the source next to them builds on its
       # own (`bun install && bun run build` in the folder, the @aifivem packages from npm). Uploaded as
       # <name>-<tag>.zip and as <name>.zip, which releases/latest/download/<name>.zip (the txAdmin recipe) points at.
-      - name: Upload the server zip
+      # <name>-runtime.zip holds only what the server runs: no source, build setup or AI notes.
+      - name: Upload the server zips
         if: steps.kind.outputs.resource == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -149,4 +150,11 @@ jobs:
           EOF
           (cd out && zip -qr "../$name-$TAG.zip" "$name")
           cp "$name-$TAG.zip" "$name.zip"
-          gh release upload "$TAG" "$name-$TAG.zip" "$name.zip" --repo "$GITHUB_REPOSITORY" --clobber
+          # Anchored patterns only match at the top (dist/web is the built page, web/ its source).
+          runtime=(/.git /.github node_modules /resource /web /scripts /bench /tsdown.config.ts /package.json /bun.lock /.prettierrc /.prettierignore /.gitignore /release-please-config.json /.release-please-manifest.json "/tsconfig*.json" CLAUDE.md "*.tsbuildinfo" "*.bak" "*.tmp" secrets.json)
+          args=()
+          for p in "${runtime[@]}"; do args+=(--exclude "$p"); done
+          mkdir -p "runtime/$name"
+          rsync -a "${args[@]}" res/ "runtime/$name/"
+          (cd runtime && zip -qr "../$name-runtime.zip" "$name")
+          gh release upload "$TAG" "$name-$TAG.zip" "$name.zip" "$name-runtime.zip" --repo "$GITHUB_REPOSITORY" --clobber

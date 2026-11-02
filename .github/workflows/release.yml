@@ -71,7 +71,7 @@ jobs:
           done
 
   # A resource release gets a ready-to-install zip built from source on a clean machine, so a release never depends
-  # on someone having committed a fresh dist/. The @aicore-fivem packages come from aicore-packages main, linked
+  # on someone having committed a fresh dist/. The @aifivem packages come from aicore-packages main, linked
   # through a bun workspace the same way the server folder links them.
   package:
     needs: release-please

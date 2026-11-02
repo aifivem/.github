@@ -25,7 +25,7 @@ and keep every checkbox below honest.
 
 - [ ] `bun run typecheck`, `bun run lint` and `bun run build` pass, and the build (`dist/`, `fxmanifest.lua`) is committed with the source.
 - [ ] The script was restarted and the console showed no `SCRIPT ERROR` or `[client error]`.
-- [ ] Uses `@aicore-fivem/lib` and ai-core instead of writing its own helper (`.claude/rules/scripts.md`).
+- [ ] Uses `@aifivem/lib` and ai-core instead of writing its own helper (`.claude/rules/scripts.md`).
 - [ ] Server data reaches clients as one snapshot plus deltas, only to who needs it (no polling, no "refetch" signals).
 - [ ] Settings a server owner tunes are in the admin panel, not in a config file; player-facing text is in `locales/en.json`.
 - [ ] No version bump by hand: release-please does it from the commit title.

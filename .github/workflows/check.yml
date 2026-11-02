@@ -1,0 +1,44 @@
+# Shared check workflow of every ai-* resource (called by each repo's .github/workflows/check.yml on pull requests
+# and pushes to main). Runs the resource's typecheck, lint and build scripts on a clean machine, so a pull request
+# shows a failing check before it is merged instead of after a release. The @aicore-fivem packages come from
+# aicore-packages main, linked through a bun workspace the same way the release workflow builds the server zip.
+# A script the resource's package.json does not have is skipped. dist/ is not compared: builds differ per machine.
+name: check
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ws/res
+      - uses: actions/checkout@v4
+        with:
+          repository: aifivem/aicore-packages
+          path: ws/packages
+      - uses: oven-sh/setup-bun@v2
+      - name: Install
+        working-directory: ws
+        run: |
+          members='"packages/*", "res"'
+          [ -f res/web/package.json ] && members="$members, \"res/web\""
+          echo "{ \"name\": \"check\", \"private\": true, \"workspaces\": [ $members ] }" > package.json
+          bun install
+      - name: Typecheck
+        working-directory: ws/res
+        run: |
+          if jq -e '.scripts.typecheck' package.json > /dev/null; then bun run typecheck; else echo "no typecheck script"; fi
+      - name: Lint
+        working-directory: ws/res
+        run: |
+          if jq -e '.scripts.lint' package.json > /dev/null; then bun run lint; else echo "no lint script"; fi
+      - name: Build
+        working-directory: ws/res
+        run: |
+          if jq -e '.scripts.build' package.json > /dev/null; then bun run build; else echo "no build script"; fi
